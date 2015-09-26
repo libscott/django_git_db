@@ -3,53 +3,26 @@ from django.db.models.sql.constants import (
 CURSOR, GET_ITERATOR_CHUNK_SIZE, MULTI, NO_RESULTS, ORDER_DIR, SINGLE,
 )
 
-from djangit import query
+from djangit import runners
 
 
 
 class GitQueryCompiler(object):
     def __init__(self, query, connection, using):
-        self.query = query
+        self.queru = query
+        self.runner = self.Runner(query)
         self.connection = connection
         self.using = using
 
 
 class SQLCompiler(GitQueryCompiler):
-    Query = query.SelectQuery
+    Runner = runners.SelectRunner
 
     def __init__(self, query, connection, using):
-        self.query = t = query
-        self.connection = connection
-        assert using == 'default'
-        assert t._annotation_select_cache == None
-        assert bool(t._annotations) == 0
-        assert bool(t._extra) == 0
-        assert t._extra_select_cache == None
-        assert t.annotation_select_mask in (set([]), None)
-        assert bool(t.context) == 0
-        #assert t.default_cols == False # TODO: wtf?
-        assert t.deferred_loading == (set([]),True)
-        assert t.distinct == False
-        assert t.distinct_fields == []
-        assert t.external_aliases == set([])
-        assert t.extra_order_by == ()
-        assert t.extra_select_mask in (None, set([]))
-        assert t.extra_tables == ()
-        assert t.filter_is_sticky == False
-        assert t.group_by == None
-        #assert t.high_mark == None
-        assert t.low_mark == 0
-        assert t.max_depth == 5
-        assert t.order_by == []
-        assert t.select_for_update == False
-        assert t.select_for_update_nowait == False
-        assert t.select_related == False
-        assert t.standard_ordering == True
-        #assert t.used_aliases == set([])
-
-        self.select = type("Select?", (), {})()
-        self.klass_info = None # type("KlassInfo?", (), {})()
-        self.annotation_col_map = None # type("AnnotationColMap?", (), {})()
+        super(SQLCompiler, self).__init__(query, connection, using)
+        self.select = self.runner.select
+        self.klass_info = self.runner.klass_info
+        self.annotation_col_map = {}
 
     def has_results(self):
         return True  # Lie
@@ -60,8 +33,8 @@ class SQLCompiler(GitQueryCompiler):
 
         cursor = self.connection.cursor()
         try:
-            cursor.execute(self.Query(self.query).run)
-        except Exception:
+            cursor.execute(self.runner.run)
+        except:
             cursor.close()
             raise
 
@@ -87,11 +60,11 @@ class SQLCompiler(GitQueryCompiler):
 
 
 class GitInsertCompiler(GitQueryCompiler):
-    Query = query.InsertQuery
+    Runner = runners.InsertRunner
 
     def execute_sql(self, return_id):
         cursor = self.connection.cursor()
-        cursor.execute(self.Query(self.query).run)
+        cursor.execute(self.runner.run)
         if return_id:
             return cursor.insert_id
 

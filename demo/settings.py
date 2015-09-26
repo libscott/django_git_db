@@ -38,6 +38,7 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'demo',
+    'django_extensions',
 )
 
 MIDDLEWARE_CLASSES = (
@@ -76,6 +77,10 @@ WSGI_APPLICATION = 'demo.wsgi.application'
 # https://docs.djangoproject.com/en/1.8/ref/settings/#databases
 
 DATABASES = {
+    '_default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': 'wat.sqlite3',
+    },
     'default': {
         'ENGINE': 'djangit',
         'NAME': os.path.join(BASE_DIR, '.git'),

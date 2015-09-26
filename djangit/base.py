@@ -44,14 +44,15 @@ class GitSchemaEditor(object):
         self.connection = connection
 
     def create_model(self, model):
-        key = 'tables/%s/objects' % model._meta.db_table
-        self.cursor.branch[key] = tree.EMPTY
+        key = 'tables/%s/%%s' % model._meta.db_table
+        self.cursor.branch[key % 'objects'] = tree.EMPTY
+        self.cursor.branch[key % 'indexes'] = tree.EMPTY
 
     def alter_unique_together(self, content_type, thingies, field_sets):
         assert len(field_sets) == 1
         table = content_type._meta.db_table
         idx_name = ','.join(sorted(field_sets.pop()))
-        key = 'tables/%s/idx/%s' % (table, idx_name)
+        key = 'tables/%s/indexes/%s' % (table, idx_name)
         self.cursor.branch[key] = tree.EMPTY
 
     def alter_field(self, from_model, from_field, to_field):
@@ -67,9 +68,14 @@ class GitSchemaEditor(object):
 class GitConnection(object):
     def __init__(self, *args):
         self.branch = tree.Branch(*args)
+        self.last_tree = self.branch.tree.oid
 
     def commit(self):
-        self.branch.commit('yea')
+        if self.branch.tree.oid != self.last_tree:
+            import traceback
+            msg = list(reversed([l.splitlines()[0].split(' in ')[1] for l in traceback.format_stack()]))
+            self.branch.commit(','.join(msg))
+            self.last_tree = self.branch.tree.oid
 
     def close(self):
         pass
@@ -104,9 +110,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def get_new_connection(self, params):
         return GitConnection(*params)
 
-    def _set_autocommit(self, val):
-        self.autocommit_savepoint = None if val else self.savepoint()
-
     def init_connection_state(self):
         pass
 
@@ -116,7 +119,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def _rollback(self):
         print "asked to rollback"
         #assert self.connection.branch.tree.oid == self.autocommit_savepoint
-        self.autocommit_savepoint = None
 
     @property
     @contextlib.contextmanager
@@ -129,6 +131,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def savepoint(self):
         return self.connection.branch.tree.oid
+
+    def _set_autocommit(self, val):
+        self.autocommit = val
 
     """
     def savepoint_commit(self, savepoint_id):
