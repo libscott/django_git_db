@@ -27,7 +27,7 @@ class GitQueryRunner(object):
         assert t.order_by == []
         assert t.select_for_update == False
         assert t.select_for_update_nowait == False
-        assert t.select_related == False
+        #assert t.select_related == False
         assert t.standard_ordering == True
         #assert t.used_aliases == set([])
 
@@ -41,15 +41,6 @@ class GitQueryRunner(object):
             'model': self.query.model
         }
         self.annotation_col_map = {}
-
-
-
-class SelectRunner(GitQueryRunner):
-    def run(self, branch):
-        key = 'tables/%s/objects' % self.query.model._meta.db_table
-        objs = (self.load_object(o) for o in branch[key].values())
-        return (self.as_row(o) for o in objs
-                               if self.qualify(self.query.where, o))
 
     def load_object(self, data):
         return cPickle.loads(data)
@@ -67,10 +58,26 @@ class SelectRunner(GitQueryRunner):
                 return obj[cond.lhs.target.name] in cond.rhs
             elif cond.lookup_name == 'exact':
                 return obj[cond.lhs.target.name] == cond.rhs
+            elif cond.lookup_name == 'gt':
+                return obj[cond.lhs.target.name] > cond.rhs
+            elif cond.lookup_name == 'gte':
+                return obj[cond.lhs.target.name] >= cond.rhs
+            elif cond.lookup_name == 'lt':
+                return obj[cond.lhs.target.name] < cond.rhs
+            elif cond.lookup_name == 'lte':
+                return obj[cond.lhs.target.name] <= cond.rhs
             else:
                 print "new lookup_name"
                 import pdb; pdb.set_trace()
                 1
+
+
+class SelectRunner(GitQueryRunner):
+    def run(self, branch):
+        key = 'tables/%s/objects' % self.query.model._meta.db_table
+        objs = (self.load_object(o) for o in branch[key].values())
+        return (self.as_row(o) for o in objs
+                               if self.qualify(self.query.where, o))
 
 
 class InsertRunner(GitQueryRunner):
@@ -106,4 +113,34 @@ class InsertRunner(GitQueryRunner):
             else:
                 print path
                 branch[path] = data
+
+
+class UpdateRunner(GitQueryRunner):
+    def run(self, branch):
+        affected_total = 0
+        key = 'tables/%s/objects' % self.query.model._meta.db_table
+        for pk in branch[key]:
+            obj_key = key + '/' + pk
+            obj = self.load_object(branch[obj_key])
+            import pdb; pdb.set_trace()
+            if self.qualify(self.query.where, obj):
+                affected = False
+                for (field, thingy, val) in self.query.values:
+                    assert thingy == None
+                    affected = affected or obj[field.name] != val
+                    obj[field.name] = val
+                # TODO: self.update_indexes(branch, record, data)
+                branch[obj_key] = cPickle.dumps(obj)
+                affected_total += int(affected)
+        return affected_total
+
+
+class DeleteRunner(GitQueryRunner):
+    def run(self, branch):
+        key = 'tables/%s/objects' % self.query.model._meta.db_table
+        for pk in branch[key]:
+            obj_key = key + '/' + pk
+            obj = self.load_object(branch[obj_key])
+            if self.qualify(self.query.where, obj):
+                branch[obj_key] = None
 

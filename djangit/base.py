@@ -1,6 +1,7 @@
 import contextlib
 import pygit2
 from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.utils import DatabaseErrorWrapper
 from djangit import compilers, cursor
 from djangit import gitly as tree
 
@@ -81,7 +82,17 @@ class GitConnection(object):
         pass
 
 
+class MyDatabaseErrorWrapper(DatabaseErrorWrapper):
+    def __exit__(self, exc_type, *args):
+        if exc_type is not None:
+            print exc_type, args
+            import six
+            return six.reraise(exc_type, *args)
+
+
 class DatabaseWrapper(BaseDatabaseWrapper):
+    vendor = 'git'
+
     Database = type("Database", (), {
         # TODO: Implement own db exception classes.
         '__getattr__': lambda self, _: type(None)
@@ -121,9 +132,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         #assert self.connection.branch.tree.oid == self.autocommit_savepoint
 
     @property
-    @contextlib.contextmanager
     def wrap_database_errors(self):
-        yield
+        return MyDatabaseErrorWrapper(self)
 
     @contextlib.contextmanager
     def schema_editor(self):

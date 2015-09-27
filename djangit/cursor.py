@@ -9,6 +9,16 @@ class GitCursor(object):
     def fetch_iter(self):
         return self.result
 
+    @property
+    def rowcount(self):
+        return self.result
+
+    def fetchone(self):
+        try:
+            return self.result.next()
+        except StopIteration:
+            return None
+
     def close(self):
         pass
 
