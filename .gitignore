@@ -1,0 +1,37 @@
+*.py[co]
+*.swp
+*.orig
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+var
+sdist
+develop-eggs
+.installed.cfg
+
+# Installer logs
+pip-log.txt
+src
+
+# Unit test / coverage reports
+.coverage
+.tox
+coverage.xml
+cover
+htmlcov
+nosetests.xml
+pep8.txt
+sloccount.sc
+
+# Translations
+*.mo
+
+.ropeproject
+/.env
+/venv
+/data

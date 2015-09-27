@@ -13,8 +13,8 @@ class GitQueryRunner(object):
         assert bool(t.context) == 0
         #assert t.default_cols == False # TODO: wtf?
         assert t.deferred_loading == (set([]),True)
-        assert t.distinct == False
-        assert t.distinct_fields == []
+        #assert t.distinct == False
+        #assert t.distinct_fields == []
         assert t.external_aliases == set([])
         assert t.extra_order_by == ()
         assert t.extra_select_mask in (None, set([]))
@@ -24,7 +24,7 @@ class GitQueryRunner(object):
         #assert t.high_mark == None
         assert t.low_mark == 0
         assert t.max_depth == 5
-        assert t.order_by == []
+        #assert t.order_by == []
         assert t.select_for_update == False
         assert t.select_for_update_nowait == False
         #assert t.select_related == False
@@ -54,18 +54,19 @@ class GitQueryRunner(object):
             assert not self.query.where.negated
             return qualifier(self.qualify(c, obj) for c in self.query.where.children)
         else:
+            lhs = obj[cond.lhs.target.name]
             if cond.lookup_name == 'in':
-                return obj[cond.lhs.target.name] in cond.rhs
+                return lhs in cond.rhs
             elif cond.lookup_name == 'exact':
-                return obj[cond.lhs.target.name] == cond.rhs
+                return lhs == cond.rhs
             elif cond.lookup_name == 'gt':
-                return obj[cond.lhs.target.name] > cond.rhs
+                return lhs > cond.rhs
             elif cond.lookup_name == 'gte':
-                return obj[cond.lhs.target.name] >= cond.rhs
+                return lhs >= cond.rhs
             elif cond.lookup_name == 'lt':
-                return obj[cond.lhs.target.name] < cond.rhs
+                return lhs < cond.rhs
             elif cond.lookup_name == 'lte':
-                return obj[cond.lhs.target.name] <= cond.rhs
+                return lhs <= cond.rhs
             else:
                 print "new lookup_name"
                 import pdb; pdb.set_trace()
@@ -74,10 +75,33 @@ class GitQueryRunner(object):
 
 class SelectRunner(GitQueryRunner):
     def run(self, branch):
+        if self.query.distinct:
+            # TODO: this?
+            pass
         key = 'tables/%s/objects' % self.query.model._meta.db_table
         objs = (self.load_object(o) for o in branch[key].values())
+        objs = self.apply_ordering(objs)
         return (self.as_row(o) for o in objs
                                if self.qualify(self.query.where, o))
+
+    def apply_ordering(self, objs):
+        if not self.query.order_by:
+            return objs
+        objs = list(objs)
+        for key in nodup(self.query.order_by):
+            reverse = False
+            if key[0] == '-':
+                reverse = True
+                key = key[1:]
+            if key == 'pk':
+                key = self.query.model._meta.pk.name
+            objs.sort(key=lambda o: o[key], reverse=reverse)
+        return iter(objs)
+
+
+def nodup(seq):
+    seen = set()
+    return [x for x in seq if not (x in seen or seen.add(x))]
 
 
 class InsertRunner(GitQueryRunner):
