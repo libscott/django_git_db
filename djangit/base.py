@@ -45,6 +45,7 @@ class GitSchemaEditor(object):
         self.connection = connection
 
     def create_model(self, model):
+        """ Is this even neccesary? """
         key = 'tables/%s/%%s' % model._meta.db_table
         self.cursor.branch[key % 'objects'] = tree.EMPTY
         self.cursor.branch[key % 'indexes'] = tree.EMPTY
@@ -58,6 +59,7 @@ class GitSchemaEditor(object):
 
     def alter_field(self, from_model, from_field, to_field):
         # TODO: Support null fields. Or not?
+        # TODO: Typing?
         pass
 
     def remove_field(self, from_model, field):

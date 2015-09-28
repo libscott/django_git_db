@@ -54,6 +54,27 @@ class GitQueryRunner(object):
             assert not self.query.where.negated
             return qualifier(self.qualify(c, obj) for c in self.query.where.children)
         else:
+            if cond.lhs.target.is_relation:
+                for rel in self.query.model._meta.related_objects:
+                    if cond.lhs.target.model == rel.through:
+                        assert False, "not supported"
+                        import pdb; pdb.set_trace()
+                        print 'm2m detected'
+                        table = rel.through._meta.db_table
+                        # The problem here is that qualify() returns a bool
+                        # wheras the filter might yield multiple positives.
+                        # So we really need to do the join and filter each
+                        # result separately.
+
+
+
+
+
+
+
+
+
+
             lhs = obj[cond.lhs.target.name]
             if cond.lookup_name == 'in':
                 return lhs in cond.rhs
@@ -146,7 +167,6 @@ class UpdateRunner(GitQueryRunner):
         for pk in branch[key]:
             obj_key = key + '/' + pk
             obj = self.load_object(branch[obj_key])
-            import pdb; pdb.set_trace()
             if self.qualify(self.query.where, obj):
                 affected = False
                 for (field, thingy, val) in self.query.values:
