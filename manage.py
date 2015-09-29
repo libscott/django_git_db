@@ -12,6 +12,9 @@ if __name__ == "__main__":
     try:
         execute_from_command_line(sys.argv)
     except:
-        type, value, tb = sys.exc_info()
-        traceback.print_exc()
-        pdb.post_mortem(tb)
+        if os.environ.get('PDB'):
+            type, value, tb = sys.exc_info()
+            traceback.print_exc()
+            pdb.post_mortem(tb)
+        else:
+            raise

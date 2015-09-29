@@ -1,10 +1,11 @@
+import copy
 import cPickle
 from django.db import utils
 
 
 class GitQueryRunner(object):
-    def __init__(self, query):
-        self.query = t = query
+    def setup_runner(self):
+        t = self.query
         assert t._annotation_select_cache == None
         assert bool(t._annotations) == 0
         assert bool(t._extra) == 0
@@ -31,16 +32,6 @@ class GitQueryRunner(object):
         assert t.standard_ordering == True
         #assert t.used_aliases == set([])
 
-        if self.query.select:
-            cols = self.query.select
-        else:
-            cols = [f.cached_col for f in self.query.model._meta.fields]
-        self.select = [(c, None, None) for c in cols]
-        self.klass_info = {
-            'select_fields': range(len(self.select)),
-            'model': self.query.model
-        }
-        self.annotation_col_map = {}
 
     def load_object(self, data):
         return cPickle.loads(data)
@@ -50,9 +41,11 @@ class GitQueryRunner(object):
 
     def qualify(self, cond, obj):
         if hasattr(cond, 'children'):
-            qualifier = all if self.query.where.connector == 'AND' else any
-            assert not self.query.where.negated
-            return qualifier(self.qualify(c, obj) for c in self.query.where.children)
+            qualifier = all if cond.connector == 'AND' else any
+            result = qualifier(self.qualify(c, obj) for c in cond.children)
+            if cond.negated:
+                result = not result
+            return result
         else:
             if cond.lhs.target.is_relation:
                 for rel in self.query.model._meta.related_objects:
@@ -67,15 +60,7 @@ class GitQueryRunner(object):
                         # result separately.
 
 
-
-
-
-
-
-
-
-
-            lhs = obj[cond.lhs.target.name]
+            lhs = obj[cond.lhs.target.attname]
             if cond.lookup_name == 'in':
                 return lhs in cond.rhs
             elif cond.lookup_name == 'exact':
@@ -96,6 +81,8 @@ class GitQueryRunner(object):
 
 class SelectRunner(GitQueryRunner):
     def run(self, branch):
+        if len(self.query.tables) > 1:
+            return self.neu_run(branch)
         if self.query.distinct:
             # TODO: this?
             pass
@@ -119,6 +106,38 @@ class SelectRunner(GitQueryRunner):
             objs.sort(key=lambda o: o[key], reverse=reverse)
         return iter(objs)
 
+    def neu_run(self, branch):
+        joins = []
+        for table in self.query.tables:
+            for alias in self.query.table_map[table]:
+                joins.append(self.query.alias_map[alias])
+        return self.dive(branch, {}, joins[:])
+
+    def dive(self, branch, row, joins):
+        join = joins.pop(0)
+        for row in self.iter_table(branch, row, join):
+            if joins:
+                for row in self.dive(branch, row, joins[:]):
+                    yield row
+            else:
+                yield self.prep_output_row(row)
+
+    def prep_output_row(self, row):
+        return [row[c[0].alias][c[0].target.attname] for c in self.select]
+
+    def iter_table(self, branch, parent_row, join):
+        # if we were going to lookup by index, this is where we'd do it.
+        key = 'tables/%s/objects' % join.table_name
+        for obj in branch.get(key, {}).values():
+            row = self.load_object(obj)
+            if join.parent_alias:
+                a, b = join.join_cols[0]
+                if parent_row[join.parent_alias][a] != row[b]:
+                    continue
+            r = copy.deepcopy(parent_row)
+            r[join.table_alias] = row
+            yield r
+
 
 def nodup(seq):
     seen = set()
@@ -126,18 +145,14 @@ def nodup(seq):
 
 
 class InsertRunner(GitQueryRunner):
-    def __init__(self, *args):
-        super(InsertRunner, self).__init__(*args)
-        self.table = self.query.model._meta.db_table
-
     def run(self, branch):
         insert_ids = []
         table = self.query.model._meta.db_table
-        cur_id = len(branch['tables/%s' % table].subtree_or_empty('objects')) + 1
+        cur_id = len(branch.get('tables/%s/objects' % table, {})) + 1
         for obj in self.query.objs:
             pk = cur_id
             cur_id += 1
-            record = {f.name: getattr(obj, f.name) for f in self.query.fields}
+            record = {f.attname: getattr(obj, f.attname) for f in self.query.fields}
             record['id'] = pk
             data = cPickle.dumps(record)
             self.update_indexes(branch, record, data)
@@ -147,12 +162,13 @@ class InsertRunner(GitQueryRunner):
         return iter(insert_ids)
 
     def update_indexes(self, branch, record, data):
-        path = 'tables/%s/indexes' % self.table
-        indexes = list(branch[path])
+        table = self.query.model._meta.db_table
+        path = 'tables/%s/indexes' % table
+        indexes = list(branch.get(path, {}))
         for index in indexes:
             cols = index.split(',')
             key = map(record.__getitem__, cols)
-            path = 'tables/%s/indexes/%s/%s' % (self.table, index, key)
+            path = 'tables/%s/indexes/%s/%s' % (table, index, key)
             if path in branch:
                 raise utils.IntegrityError("%s: %s" % (index, key))
             else:
@@ -182,7 +198,7 @@ class UpdateRunner(GitQueryRunner):
 class DeleteRunner(GitQueryRunner):
     def run(self, branch):
         key = 'tables/%s/objects' % self.query.model._meta.db_table
-        for pk in branch[key]:
+        for pk in branch.get(key, {}):
             obj_key = key + '/' + pk
             obj = self.load_object(branch[obj_key])
             if self.qualify(self.query.where, obj):

@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.sql.compiler import SQLCompiler
 from django.db.models.sql.constants import (
 CURSOR, GET_ITERATOR_CHUNK_SIZE, MULTI, NO_RESULTS, ORDER_DIR, SINGLE,
 )
@@ -6,12 +7,11 @@ CURSOR, GET_ITERATOR_CHUNK_SIZE, MULTI, NO_RESULTS, ORDER_DIR, SINGLE,
 from djangit import runners
 
 
-
-class GitQueryCompiler(object):
+class GitQueryCompiler(SQLCompiler):
     def __init__(self, query, connection, using):
-        self.runner = self.Runner(query)
-        self.connection = connection
-        self.using = using
+        super(GitQueryCompiler, self).__init__(query, connection, using)
+        self.setup_query()
+        self.setup_runner()
 
     def execute_sql(self, result_type=MULTI):
         if not result_type:
@@ -19,7 +19,7 @@ class GitQueryCompiler(object):
 
         self.cursor = cursor = self.connection.cursor()
         try:
-            cursor.execute(self.runner.run)
+            cursor.execute(self.run)
         except:
             cursor.close()
             raise
@@ -53,14 +53,7 @@ class GitQueryCompiler(object):
         return results
 
 
-class SQLCompiler(GitQueryCompiler):
-    Runner = runners.SelectRunner
-
-    def __init__(self, query, connection, using):
-        super(SQLCompiler, self).__init__(query, connection, using)
-        self.select = self.runner.select
-        self.klass_info = self.runner.klass_info
-        self.annotation_col_map = {}
+class SQLCompiler(GitQueryCompiler, runners.SelectRunner):
 
     def has_results(self):
         if not hasattr(self, 'cursor'):
@@ -69,27 +62,24 @@ class SQLCompiler(GitQueryCompiler):
         return True  # Lie
 
 
-class GitInsertCompiler(GitQueryCompiler):
-    Runner = runners.InsertRunner
+class GitInsertCompiler(GitQueryCompiler, runners.InsertRunner):
 
     def execute_sql(self, return_id):
         cursor = self.connection.cursor()
-        cursor.execute(self.runner.run)
+        cursor.execute(self.run)
         if return_id:
             return cursor.insert_id
 
 
-class GitUpdateCompiler(GitQueryCompiler):
-    Runner = runners.UpdateRunner
+class GitUpdateCompiler(GitQueryCompiler, runners.UpdateRunner):
 
     def execute_sql(self, return_type=MULTI):
         out = super(GitUpdateCompiler, self).execute_sql(CURSOR)
         return out.rowcount
 
 
-class GitDeleteCompiler(GitQueryCompiler):
-    Runner = runners.DeleteRunner
-
+class GitDeleteCompiler(GitQueryCompiler, runners.DeleteRunner):
+    pass
 
 
 SQLInsertCompiler = GitInsertCompiler

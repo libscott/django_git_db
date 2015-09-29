@@ -16,6 +16,10 @@ class GitConnectionOpts(object):
     def bulk_batch_size(self, fields, objs):
         return 10
 
+    def quote_name(self, name):
+        print "quoting name:", name
+        return name
+
 
 
 class GitConnectionFeatures(object):
