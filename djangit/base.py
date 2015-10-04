@@ -38,8 +38,10 @@ class GitConnectionOperations(object):
 
 
 class GitConnectionFeatures(object):
+    gis_enabled = False
     truncates_names = False
     can_rollback_ddl = True
+    can_clone_databases = False
     autocommits_when_autocommit_is_off = False
     interprets_empty_strings_as_nulls = False
     can_combine_inserts_with_and_without_auto_increment_pk = True
