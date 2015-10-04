@@ -2,11 +2,14 @@ import contextlib
 import pygit2
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.utils import DatabaseErrorWrapper
-from djangit import compilers, cursor
+from djangit import compilers, cursor, introspection
 from djangit import gitly as tree
 
 
-class GitConnectionOpts(object):
+class GitConnectionOperations(object):
+    def __init__(self, connection):
+        self.connection = connection
+
     def max_name_length(self):
         return 255
 
@@ -17,8 +20,20 @@ class GitConnectionOpts(object):
         return 10
 
     def quote_name(self, name):
-        print "quoting name:", name
         return name
+
+    def check_expression_support(self, thingy):
+        return True
+
+    def get_db_converters(self, wat):
+        print 'get_db_converters', wat
+        return []
+
+    def sql_flush(self, style, tables, seqs, allow_cascade):
+        if tables != []:
+            import pdb; pdb.set_trace()
+            1
+        return []
 
 
 
@@ -33,14 +48,6 @@ class GitConnectionFeatures(object):
 class GitValidation(object):
     def check_field(self, field, from_model=None):
         return []
-
-
-class GitIntrospection(object):
-    def table_names(self, cursor):
-        try:
-            return cursor.branch['tables'].keys()
-        except KeyError:
-            return []
 
 
 class GitSchemaEditor(object):
@@ -104,25 +111,30 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         '__getattr__': lambda self, _: type(None)
     })()
 
-    def __init__(self, db, alias):
-        super(DatabaseWrapper, self).__init__(db, alias)
+    def __init__(self, *args, **kwargs):
+        super(DatabaseWrapper, self).__init__(*args, **kwargs)
         #self.alias = alias
-        self.ops = GitConnectionOpts()
+        self.ops = GitConnectionOperations(self)
         self.validation = GitValidation()
         self.features = GitConnectionFeatures()
-        self.introspection = GitIntrospection()
+        self.introspection = introspection.GitIntrospection(self)
         #self.in_atomic_block = False
         #self.savepoint_ids = []
         #self.closed_in_transaction = False
         self.autocommit = False
 
     @property
+    def creation(self):
+        from djangit import creation
+        return creation.GitDatabaseCreation(self)
+
+    @property
     def queries_logged(self):
         return False
 
     def get_connection_params(self):
-        repo = pygit2.Repository(self.settings_dict['NAME'])
-        return (repo, self.settings_dict['BRANCH'])
+        repo = pygit2.Repository(self.settings_dict['REPO'])
+        return (repo, self.settings_dict['NAME'])
 
     def get_new_connection(self, params):
         return GitConnection(*params)
@@ -150,36 +162,3 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _set_autocommit(self, val):
         self.autocommit = val
-
-    """
-    def savepoint_commit(self, savepoint_id):
-        print "savepoint_commit"
-        self.commit()
-
-    def rollback(self):
-        import pdb; pdb.set_trace()
-        assert False, 'asked to rollback'
-
-    def get_autocommit(self):
-        return self.autocommit
-
-    def set_autocommit(self, val):
-        print 'set autocommit: %s' % val
-        self.autocommit = val
-
-    def prepare_database(self):
-        pass
-
-    def check_constraints(self, table_names):
-        # TODO: Wat do?
-        pass
-
-    @contextlib.contextmanager
-    def constraint_checks_disabled(self):
-        # todo
-        yield
-
-    def close(self):
-        pass
-    """
-

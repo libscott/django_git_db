@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = (
+    'djangit',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -83,8 +84,8 @@ DATABASES = {
     },
     'default': {
         'ENGINE': 'djangit',
-        'NAME': os.path.join(BASE_DIR, '.git'),
-        'BRANCH': 'demo',
+        'NAME': 'demo',
+        'REPO': os.path.join(BASE_DIR, '.git'),
     }
 }
 

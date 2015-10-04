@@ -2,12 +2,14 @@ import copy
 import cPickle
 from django.db import utils
 
+from djangit.selectors import yield_rows
+
 
 class GitQueryRunner(object):
     def setup_runner(self):
         t = self.query
         assert t._annotation_select_cache == None
-        assert bool(t._annotations) == 0
+        #assert bool(t._annotations) == 0
         assert bool(t._extra) == 0
         assert t._extra_select_cache == None
         assert t.annotation_select_mask in (set([]), None)
@@ -32,7 +34,6 @@ class GitQueryRunner(object):
         assert t.standard_ordering == True
         #assert t.used_aliases == set([])
 
-
     def load_object(self, data):
         return cPickle.loads(data)
 
@@ -47,20 +48,10 @@ class GitQueryRunner(object):
                 result = not result
             return result
         else:
-            if cond.lhs.target.is_relation:
-                for rel in self.query.model._meta.related_objects:
-                    if cond.lhs.target.model == rel.through:
-                        assert False, "not supported"
-                        import pdb; pdb.set_trace()
-                        print 'm2m detected'
-                        table = rel.through._meta.db_table
-                        # The problem here is that qualify() returns a bool
-                        # wheras the filter might yield multiple positives.
-                        # So we really need to do the join and filter each
-                        # result separately.
-
-
-            lhs = obj[cond.lhs.target.attname]
+            try:
+                lhs = obj[cond.lhs.alias][cond.lhs.target.attname]
+            except KeyError:
+                lhs = obj[cond.lhs.target.attname]
             if cond.lookup_name == 'in':
                 return lhs in cond.rhs
             elif cond.lookup_name == 'exact':
@@ -81,21 +72,19 @@ class GitQueryRunner(object):
 
 class SelectRunner(GitQueryRunner):
     def run(self, branch):
-        if len(self.query.tables) > 1:
-            return self.neu_run(branch)
         if self.query.distinct:
             # TODO: this?
             pass
-        key = 'tables/%s/objects' % self.query.model._meta.db_table
-        objs = (self.load_object(o) for o in branch[key].values())
+        objs = self.all_the_joins(branch)
         objs = self.apply_ordering(objs)
-        return (self.as_row(o) for o in objs
-                               if self.qualify(self.query.where, o))
+        return yield_rows(self.select, objs)
 
     def apply_ordering(self, objs):
         if not self.query.order_by:
             return objs
         objs = list(objs)
+        if not objs:
+            return []
         for key in nodup(self.query.order_by):
             reverse = False
             if key[0] == '-':
@@ -103,15 +92,22 @@ class SelectRunner(GitQueryRunner):
                 key = key[1:]
             if key == 'pk':
                 key = self.query.model._meta.pk.name
-            objs.sort(key=lambda o: o[key], reverse=reverse)
+            # It's weird that we're given the raw column names without aliases
+            # So we'll have to find it ourselves.
+            for (col,_,_) in self.select:
+                if col.target.attname == key:
+                    objs.sort(key=lambda o: o[col.alias][key], reverse=reverse)
+                    break
+            else:
+                assert False, ("Couldn't find sort column: %s" % col)
         return iter(objs)
 
-    def neu_run(self, branch):
+    def all_the_joins(self, branch):
         joins = []
         for table in self.query.tables:
             for alias in self.query.table_map[table]:
                 joins.append(self.query.alias_map[alias])
-        return self.dive(branch, {}, joins[:])
+        return self.dive(branch, {}, joins)
 
     def dive(self, branch, row, joins):
         join = joins.pop(0)
@@ -120,10 +116,8 @@ class SelectRunner(GitQueryRunner):
                 for row in self.dive(branch, row, joins[:]):
                     yield row
             else:
-                yield self.prep_output_row(row)
-
-    def prep_output_row(self, row):
-        return [row[c[0].alias][c[0].target.attname] for c in self.select]
+                if self.qualify(self.query.where, row):
+                    yield row
 
     def iter_table(self, branch, parent_row, join):
         # if we were going to lookup by index, this is where we'd do it.
@@ -184,23 +178,24 @@ class UpdateRunner(GitQueryRunner):
             obj_key = key + '/' + pk
             obj = self.load_object(branch[obj_key])
             if self.qualify(self.query.where, obj):
-                affected = False
                 for (field, thingy, val) in self.query.values:
                     assert thingy == None
-                    affected = affected or obj[field.name] != val
-                    obj[field.name] = val
+                    obj[field.attname] = val
                 # TODO: self.update_indexes(branch, record, data)
                 branch[obj_key] = cPickle.dumps(obj)
-                affected_total += int(affected)
+                affected_total += 1
         return affected_total
 
 
 class DeleteRunner(GitQueryRunner):
     def run(self, branch):
         key = 'tables/%s/objects' % self.query.model._meta.db_table
+        affected = 0
         for pk in branch.get(key, {}):
             obj_key = key + '/' + pk
             obj = self.load_object(branch[obj_key])
             if self.qualify(self.query.where, obj):
                 branch[obj_key] = None
+                affected += 1
+        return affected
 
