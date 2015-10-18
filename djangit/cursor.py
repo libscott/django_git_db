@@ -1,10 +1,15 @@
+from djangit.engine import git_run_sql
+
 
 class GitCursor(object):
     def __init__(self, branch):
         self.branch = branch
 
-    def execute(self, f):
-        self.result = f(self.branch)
+    def execute(self, f, params=None):
+        if callable(f):
+            self.result = f(self.branch)
+        else:
+            self.result = git_run_sql(self.branch, f, params)
 
     def fetch_iter(self):
         return self.result

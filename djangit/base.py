@@ -1,40 +1,10 @@
+import collections
 import contextlib
 import pygit2
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.utils import DatabaseErrorWrapper
-from djangit import compilers, cursor, introspection
+from djangit import cursor, introspection, schema, operations
 from djangit import gitly as tree
-
-
-class GitConnectionOperations(object):
-    def __init__(self, connection):
-        self.connection = connection
-
-    def max_name_length(self):
-        return 255
-
-    def compiler(self, suggestion):
-        return getattr(compilers, suggestion)
-
-    def bulk_batch_size(self, fields, objs):
-        return 10
-
-    def quote_name(self, name):
-        return name
-
-    def check_expression_support(self, thingy):
-        return True
-
-    def get_db_converters(self, wat):
-        print 'get_db_converters', wat
-        return []
-
-    def sql_flush(self, style, tables, seqs, allow_cascade):
-        if tables != []:
-            import pdb; pdb.set_trace()
-            1
-        return []
-
 
 
 class GitConnectionFeatures(object):
@@ -45,40 +15,18 @@ class GitConnectionFeatures(object):
     autocommits_when_autocommit_is_off = False
     interprets_empty_strings_as_nulls = False
     can_combine_inserts_with_and_without_auto_increment_pk = True
+    uses_savepoints = True
+    supports_foreign_keys = True
+    implied_column_null = True
+    related_fields_match_type = True
+    requires_literal_defaults = True
+    supports_combined_alters = False
+    connection_persists_old_columns = True  # Get the reset in case...
 
 
 class GitValidation(object):
     def check_field(self, field, from_model=None):
         return []
-
-
-class GitSchemaEditor(object):
-    def __init__(self, cursor, connection):
-        self.cursor = cursor
-        self.connection = connection
-
-    def create_model(self, model):
-        """ Is this even neccesary? """
-        key = 'tables/%s/%%s' % model._meta.db_table
-        self.cursor.branch[key % 'objects'] = tree.EMPTY
-        self.cursor.branch[key % 'indexes'] = tree.EMPTY
-
-    def alter_unique_together(self, content_type, thingies, field_sets):
-        assert len(field_sets) == 1
-        table = content_type._meta.db_table
-        idx_name = ','.join(sorted(field_sets.pop()))
-        key = 'tables/%s/indexes/%s' % (table, idx_name)
-        self.cursor.branch[key] = tree.EMPTY
-
-    def alter_field(self, from_model, from_field, to_field):
-        # TODO: Support null fields. Or not?
-        # TODO: Typing?
-        pass
-
-    def remove_field(self, from_model, field):
-        key = 'tables/%s/objects' % from_model._meta.db_table
-        for obj in self.cursor.branch[key]:
-            whoadude()
 
 
 class GitConnection(object):
@@ -108,6 +56,8 @@ class MyDatabaseErrorWrapper(DatabaseErrorWrapper):
 class DatabaseWrapper(BaseDatabaseWrapper):
     vendor = 'git'
 
+    data_types = type("", (), {'__getitem__': lambda _, k: k})()
+
     Database = type("Database", (), {
         # TODO: Implement own db exception classes.
         '__getattr__': lambda self, _: type(None)
@@ -116,7 +66,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
         #self.alias = alias
-        self.ops = GitConnectionOperations(self)
+        self.ops = operations.GitDatabaseOperations(self)
         self.validation = GitValidation()
         self.features = GitConnectionFeatures()
         self.introspection = introspection.GitIntrospection(self)
@@ -155,9 +105,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     def wrap_database_errors(self):
         return MyDatabaseErrorWrapper(self)
 
-    @contextlib.contextmanager
     def schema_editor(self):
-        yield GitSchemaEditor(self.cursor(), self)
+        return schema.GitSchemaEditor(self)
 
     def savepoint(self):
         return self.connection.branch.tree.oid
