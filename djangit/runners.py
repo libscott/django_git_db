@@ -5,6 +5,11 @@ from django.db import utils
 from djangit.selectors import yield_rows
 
 
+"""
+Run Django queries directly
+"""
+
+
 class GitQueryRunner(object):
     def setup_runner(self):
         t = self.query

@@ -2,7 +2,31 @@ import google.protobuf
 from itertools import count
 
 
+class SchemaObject(dict):
+    def __init__(self, *args, **kwargs):
+        super(SchemaObject, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+class Table(SchemaObject):
+    pass
+
+
 def create(branch, name, fields):
+    pass
+
+
+
+
+
+
+
+
+
+
+
+
+def create_proto(branch, name, fields):
     proto = ["message %s {" % name]
     proto.extend(map(proto_field, zip(fields, count())))
     proto.append("}")

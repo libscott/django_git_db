@@ -19,7 +19,7 @@ class GitQueryCompiler(SQLCompiler):
 
         self.cursor = cursor = self.connection.cursor()
         try:
-            cursor.execute(self.run)
+            cursor.execute('DIRECT', self.run)
         except:
             cursor.close()
             raise
@@ -66,7 +66,7 @@ class GitInsertCompiler(GitQueryCompiler, runners.InsertRunner):
 
     def execute_sql(self, return_id):
         cursor = self.connection.cursor()
-        cursor.execute(self.run)
+        cursor.execute("DIRECT", self.run)
         if return_id:
             return cursor.insert_id
 

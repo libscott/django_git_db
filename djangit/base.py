@@ -2,9 +2,13 @@ import collections
 import contextlib
 import pygit2
 from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 from django.db.utils import DatabaseErrorWrapper
-from djangit import cursor, introspection, schema, operations
-from djangit import gitly as tree
+from djangit import cursor, introspection, operations
+
+from djangit import engine
+from djangit.engine import Branch
+
 
 
 class GitConnectionFeatures(object):
@@ -24,6 +28,12 @@ class GitConnectionFeatures(object):
     connection_persists_old_columns = True  # Get the reset in case...
 
 
+class GitSchemaEditor(BaseDatabaseSchemaEditor):
+    def prepare_default(self, val):
+        import json
+        return json.dumps(val)
+
+
 class GitValidation(object):
     def check_field(self, field, from_model=None):
         return []
@@ -31,7 +41,7 @@ class GitValidation(object):
 
 class GitConnection(object):
     def __init__(self, *args):
-        self.branch = tree.Branch(*args)
+        self.branch = Branch(*args)
         self.last_tree = self.branch.tree.oid
 
     def commit(self):
@@ -58,10 +68,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     data_types = type("", (), {'__getitem__': lambda _, k: k})()
 
-    Database = type("Database", (), {
-        # TODO: Implement own db exception classes.
-        '__getattr__': lambda self, _: type(None)
-    })()
+    Database = engine
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
@@ -106,7 +113,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return MyDatabaseErrorWrapper(self)
 
     def schema_editor(self):
-        return schema.GitSchemaEditor(self)
+        return GitSchemaEditor(self)
 
     def savepoint(self):
         return self.connection.branch.tree.oid

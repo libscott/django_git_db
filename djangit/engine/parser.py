@@ -1,8 +1,10 @@
-import threading
 from contextlib import contextmanager
-from djangit.engine.grammar import AddConstraint, UniqueConstraint, \
-    ForeignKey, CreateIndex, CreateTable, AlterColumn, SetDefault, DropDefault
 import re
+import threading
+
+from djangit.engine.statements import AddConstraint, UniqueConstraint, \
+    ForeignKey, CreateIndex, CreateTable, AlterColumn, SetDefault, \
+    DropDefault, ReleaseSavepoint, RollbackToSavepoint
 
 
 parsing = threading.local()
@@ -51,9 +53,6 @@ def fail():
 
 def parse(sql):
     """ Parse sql statement into convenient datastructure """
-    print sql
-    print
-    print
     parsing.string = sql
     out = (parse_create_table()
            or parse_release_savepoint()
@@ -167,26 +166,24 @@ parse_name = lambda: match('`([^`]+)` *')
 
 
 def parse_field_spec():
-    field = parse_name()
-    type = match('(\w+) ?')
-    null = not match('NOT NULL ?|')
-    opts = []
-    if match('PRIMARY KEY ?|'):
-        opts.append('primary key')
-    if match('UNIQUE ?|'):
-        opts.append('unique')
-    opts.sort()
+    out = CreateTable.FieldSpec(
+        name=parse_name(),
+        type=match('(\w+) ?'),
+        required=bool(match('NOT NULL ?|')),
+        primary_key=bool(match('PRIMARY KEY ?|')),
+        unique=bool(match('UNIQUE ?|'))
+    )
     match(', |')
-    return (field, type, null, opts)
+    return out
 
 
 def parse_release_savepoint():
     if not alt(match, "RELEASE SAVEPOINT "):
         return
-    return ('RELEASE SAVEPOINT', parse_name())
+    return ReleaseSavepoint(parse_name())
 
 
 def parse_rollback():
     if not alt(match, "ROLLBACK TO SAVEPOINT "):
         return
-    return ('ROLLBACK', parse_name())
+    return RollbackToSavepoint(parse_name())
