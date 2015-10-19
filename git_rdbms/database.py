@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import json
 
 import gitly
-from git_rdbms import exceptions as exc, parser, statements
+from git_rdbms import exceptions as exc, parser, proto, statements
 
 
 ''' Probably a nicer architecture would be for this to be the connection
@@ -62,6 +62,7 @@ class Rdbms(gitly.Branch):
         self.branch['tables/%s/objects' % ddl.name] = gitly.EMPTY
         with self.table_schema(ddl.name, False) as table:
             table.update({
+                'name': ddl.name,
                 'columns': {},
                 'indexes': {},
                 'foreign_keys': {},
@@ -82,6 +83,7 @@ class Rdbms(gitly.Branch):
                         'columns': [column.name],
                         'unique': True,
                     }
+        proto.generate(table)
 
     def ddl_alter_table(self, ddl):
         with self.table_schema(ddl.name, True) as table:
@@ -106,6 +108,7 @@ class Rdbms(gitly.Branch):
                 if type(ddl.alteration.alteration) == statements.SetDefault:
                     table['columns'][ddl.alteration.name]['default'] = \
                         json.loads(ddl.alteration.alteration.value)
+                proto.generate(table)
             else:
                 import pdb; pdb.set_trace()
                 1
@@ -117,8 +120,6 @@ class Rdbms(gitly.Branch):
             }
         self.update_index(ddl.table, ddl.name)
 
-    def generate_models(self, schema):
-        pass
 
     def show_tables(self, _):
         return iter(zip(self.branch.get('tables', [])))
