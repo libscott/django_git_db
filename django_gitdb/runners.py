@@ -2,7 +2,7 @@ import copy
 import cPickle
 from django.db import utils
 
-from djangit.selectors import yield_rows
+from django_gitdb.selectors import yield_rows
 
 
 """

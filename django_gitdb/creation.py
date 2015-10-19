@@ -28,7 +28,8 @@ class GitDatabaseCreation(BaseDatabaseCreation):
     def _create_test_db(self, verbosity, autoclobber, keepdb=False):
         test_database_name = self._get_test_db_name()
         refname = 'refs/heads/' + test_database_name
-        repo = self.connection.cursor().cursor.branch.repo
+        # TODO: un-hack this
+        repo = self.connection.cursor().cursor.db.branch.repo
         exists = refname in repo.listall_references()
         if exists and not keepdb:
             if not autoclobber:

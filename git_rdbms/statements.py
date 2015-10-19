@@ -30,8 +30,6 @@ class ForeignKey(DDL):
     name = attr.ib()
     ref_table = attr.ib()
     ref_cols = attr.ib()
-    deferrable = attr.ib()
-    initially_deferred = attr.ib()
 
 
 @attr.s
@@ -44,12 +42,18 @@ class CreateIndex(DDL):
 @attr.s
 class CreateTable(DDL):
     name = attr.ib()
-    fields = attr.ib()
+    columns = attr.ib()
 
-    class FieldSpec(dict):
+    class ColumnSpec(dict):
         def __init__(self, *args, **kwargs):
-            super(CreateTable.FieldSpec, self).__init__(*args, **kwargs)
+            super(CreateTable.ColumnSpec, self).__init__(*args, **kwargs)
             self.__dict__ = self
+
+
+@attr.s
+class AlterTable(DDL):
+    name = attr.ib()
+    alteration = attr.ib()
 
 
 @attr.s
@@ -76,3 +80,7 @@ class ReleaseSavepoint(Query):
 @attr.s
 class RollbackToSavepoint(Query):
     savepoint = attr.ib()
+
+
+class ShowTables(Query):
+    pass

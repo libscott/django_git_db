@@ -1,6 +1,6 @@
 from django.db.backends.base.operations import BaseDatabaseOperations
 
-from djangit import compilers
+from django_gitdb import compilers
 
 
 class GitDatabaseOperations(BaseDatabaseOperations):

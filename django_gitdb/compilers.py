@@ -4,7 +4,7 @@ from django.db.models.sql.constants import (
 CURSOR, GET_ITERATOR_CHUNK_SIZE, MULTI, NO_RESULTS, ORDER_DIR, SINGLE,
 )
 
-from djangit import runners
+from django_gitdb import runners
 
 
 class GitQueryCompiler(SQLCompiler):

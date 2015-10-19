@@ -1,14 +1,68 @@
-import collections
-import contextlib
-import pygit2
 from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.backends.base.introspection import \
+    BaseDatabaseIntrospection, TableInfo
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 from django.db.utils import DatabaseErrorWrapper
-from djangit import cursor, introspection, operations
+from django_gitdb import operations
 
-from djangit import engine
-from djangit.engine import Branch
+import git_rdbms
 
+
+class DatabaseWrapper(BaseDatabaseWrapper):
+    vendor = 'git'
+
+    data_types = type("", (), {'__getitem__': lambda _, k: k})()
+
+    Database = git_rdbms
+
+    def __init__(self, *args, **kwargs):
+        super(DatabaseWrapper, self).__init__(*args, **kwargs)
+        #self.alias = alias
+        self.ops = operations.GitDatabaseOperations(self)
+        self.validation = GitValidation()
+        self.features = GitConnectionFeatures()
+        self.introspection = GitIntrospection(self)
+        #self.in_atomic_block = False
+        #self.savepoint_ids = []
+        #self.closed_in_transaction = False
+        self.autocommit = False
+
+    @property
+    def creation(self):
+        from django_gitdb import creation
+        return creation.GitDatabaseCreation(self)
+
+    @property
+    def queries_logged(self):
+        return False
+
+    def get_connection_params(self):
+        return (self.settings_dict['REPO'], self.settings_dict['NAME'])
+
+    def get_new_connection(self, params):
+        return git_rdbms.Connection(*params)
+
+    def init_connection_state(self):
+        pass
+
+    def create_cursor(self):
+        return self.connection.cursor()
+
+    def _rollback(self):
+        self.connection.rollback()
+
+    @property
+    def wrap_database_errors(self):
+        return MyDatabaseErrorWrapper(self)
+
+    def schema_editor(self):
+        return GitSchemaEditor(self)
+
+    def savepoint(self):
+        return self.connection.savepoint()
+
+    def _set_autocommit(self, val):
+        self.autocommit = val
 
 
 class GitConnectionFeatures(object):
@@ -26,9 +80,13 @@ class GitConnectionFeatures(object):
     requires_literal_defaults = True
     supports_combined_alters = False
     connection_persists_old_columns = True  # Get the reset in case...
+    can_defer_constraint_checks = False
 
 
 class GitSchemaEditor(BaseDatabaseSchemaEditor):
+    sql_create_fk = BaseDatabaseSchemaEditor.sql_create_fk \
+        .replace(' DEFERRABLE INITIALLY DEFERRED', '')  # Don't support this
+
     def prepare_default(self, val):
         import json
         return json.dumps(val)
@@ -39,22 +97,6 @@ class GitValidation(object):
         return []
 
 
-class GitConnection(object):
-    def __init__(self, *args):
-        self.branch = Branch(*args)
-        self.last_tree = self.branch.tree.oid
-
-    def commit(self):
-        if self.branch.tree.oid != self.last_tree:
-            import traceback
-            msg = list(reversed([l.splitlines()[0].split(' in ')[1] for l in traceback.format_stack()]))
-            self.branch.commit(','.join(msg))
-            self.last_tree = self.branch.tree.oid
-
-    def close(self):
-        pass
-
-
 class MyDatabaseErrorWrapper(DatabaseErrorWrapper):
     def __exit__(self, exc_type, *args):
         if exc_type is not None:
@@ -63,60 +105,7 @@ class MyDatabaseErrorWrapper(DatabaseErrorWrapper):
             return six.reraise(exc_type, *args)
 
 
-class DatabaseWrapper(BaseDatabaseWrapper):
-    vendor = 'git'
-
-    data_types = type("", (), {'__getitem__': lambda _, k: k})()
-
-    Database = engine
-
-    def __init__(self, *args, **kwargs):
-        super(DatabaseWrapper, self).__init__(*args, **kwargs)
-        #self.alias = alias
-        self.ops = operations.GitDatabaseOperations(self)
-        self.validation = GitValidation()
-        self.features = GitConnectionFeatures()
-        self.introspection = introspection.GitIntrospection(self)
-        #self.in_atomic_block = False
-        #self.savepoint_ids = []
-        #self.closed_in_transaction = False
-        self.autocommit = False
-
-    @property
-    def creation(self):
-        from djangit import creation
-        return creation.GitDatabaseCreation(self)
-
-    @property
-    def queries_logged(self):
-        return False
-
-    def get_connection_params(self):
-        repo = pygit2.Repository(self.settings_dict['REPO'])
-        return (repo, self.settings_dict['NAME'])
-
-    def get_new_connection(self, params):
-        return GitConnection(*params)
-
-    def init_connection_state(self):
-        pass
-
-    def create_cursor(self):
-        return cursor.GitCursor(self.connection.branch)
-
-    def _rollback(self):
-        print "asked to rollback"
-        #assert self.connection.branch.tree.oid == self.autocommit_savepoint
-
-    @property
-    def wrap_database_errors(self):
-        return MyDatabaseErrorWrapper(self)
-
-    def schema_editor(self):
-        return GitSchemaEditor(self)
-
-    def savepoint(self):
-        return self.connection.branch.tree.oid
-
-    def _set_autocommit(self, val):
-        self.autocommit = val
+class GitIntrospection(BaseDatabaseIntrospection):
+    def get_table_list(self, cursor):
+        cursor.execute('SHOW TABLES')
+        return [TableInfo(name, 't') for (name,) in cursor.fetch_iter()]

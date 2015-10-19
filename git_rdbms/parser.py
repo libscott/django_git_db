@@ -2,9 +2,9 @@ from contextlib import contextmanager
 import re
 import threading
 
-from djangit.engine.statements import AddConstraint, UniqueConstraint, \
+from git_rdbms.statements import AddConstraint, UniqueConstraint, \
     ForeignKey, CreateIndex, CreateTable, AlterColumn, SetDefault, \
-    DropDefault, ReleaseSavepoint, RollbackToSavepoint
+    DropDefault, ReleaseSavepoint, RollbackToSavepoint, ShowTables, AlterTable
 
 
 parsing = threading.local()
@@ -59,6 +59,7 @@ def parse(sql):
            or parse_rollback()
            or parse_alter_table()
            or parse_create_index()
+           or parse_show_tables()
            or fail())
     assert parsing.string == '', parsing.string
     return out
@@ -69,8 +70,8 @@ def parse_create_table():
         return
     name = parse_name()
     with parens():
-        fields = many(parse_field_spec)
-    return CreateTable(name, fields)
+        columns =many(parse_column_spec)
+    return CreateTable(name, columns)
 
 
 def parse_alter_table():
@@ -80,7 +81,7 @@ def parse_alter_table():
     alteration = (parse_add_constraint()
                   or parse_alter_column()
                   or fail())
-    return (table, alteration)
+    return AlterTable(table, alteration)
 
 
 def parse_alter_column():
@@ -130,9 +131,7 @@ def parse_add_foreign_key():
     table = parse_name()
     with parens():
         cols = parse_name_list()
-    return ForeignKey(name, table, cols,
-                      bool(match('DEFERRABLE ?|')),
-                      bool(match('INITIALLY DEFERRED ?|')))
+    return ForeignKey(name, table, cols)
 
 
 def parse_create_index():
@@ -165,8 +164,8 @@ def parens():
 parse_name = lambda: match('`([^`]+)` *')
 
 
-def parse_field_spec():
-    out = CreateTable.FieldSpec(
+def parse_column_spec():
+    out = CreateTable.ColumnSpec(
         name=parse_name(),
         type=match('(\w+) ?'),
         required=bool(match('NOT NULL ?|')),
@@ -187,3 +186,8 @@ def parse_rollback():
     if not alt(match, "ROLLBACK TO SAVEPOINT "):
         return
     return RollbackToSavepoint(parse_name())
+
+
+def parse_show_tables():
+    if alt(match, "SHOW TABLES"):
+        return ShowTables()

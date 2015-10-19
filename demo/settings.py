@@ -31,7 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = (
-    'djangit',
+    'django_gitdb',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -83,7 +83,7 @@ DATABASES = {
         'NAME': 'wat.sqlite3',
     },
     'default': {
-        'ENGINE': 'djangit',
+        'ENGINE': 'django_gitdb',
         'NAME': 'demo',
         'REPO': os.path.join(BASE_DIR, '.git'),
     }
