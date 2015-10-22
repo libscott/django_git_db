@@ -3,7 +3,7 @@ import cPickle
 from django.db import utils
 
 from django_gitdb.selectors import yield_rows
-
+from git_rdbms import proto
 
 """
 Run Django queries directly
@@ -76,7 +76,8 @@ class GitQueryRunner(object):
 
 
 class SelectRunner(GitQueryRunner):
-    def run(self, branch):
+    def run(self, db):
+        branch = db.branch
         if self.query.distinct:
             # TODO: this?
             pass
@@ -144,7 +145,8 @@ def nodup(seq):
 
 
 class InsertRunner(GitQueryRunner):
-    def run(self, branch):
+    def run(self, db):
+        branch = db.branch
         insert_ids = []
         table = self.query.model._meta.db_table
         cur_id = len(branch.get('tables/%s/objects' % table, {})) + 1
@@ -153,8 +155,7 @@ class InsertRunner(GitQueryRunner):
             cur_id += 1
             record = {f.attname: getattr(obj, f.attname) for f in self.query.fields}
             record['id'] = pk
-            data = cPickle.dumps(record)
-            self.update_indexes(branch, record, data)
+            db.update_indexes(table, record)
             key = 'tables/%s/objects/%s' % (table, pk)
             branch[key] = cPickle.dumps(record)
             insert_ids.append(pk)

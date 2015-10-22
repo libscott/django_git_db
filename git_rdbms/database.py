@@ -1,5 +1,6 @@
 from contextlib import contextmanager
-import json
+import ujson as json
+import urllib
 
 import gitly
 from git_rdbms import exceptions as exc, parser, proto, statements
@@ -32,9 +33,8 @@ class Rdbms(gitly.Branch):
             self.branch.tree = self.last_tree
 
     def run_sql(self, sql, params):
-        print sql
         if sql == 'DIRECT':
-            return params(self.branch)
+            return params(self)
         cmd = parser.parse(sql)
         if cmd.is_ddl:
             assert not params
@@ -60,7 +60,7 @@ class Rdbms(gitly.Branch):
 
     def ddl_create_table(self, ddl):
         self.branch['tables/%s/objects' % ddl.name] = gitly.EMPTY
-        with self.table_schema(ddl.name, False) as table:
+        with self.edit_table_schema(ddl.name, False) as table:
             table.update({
                 'name': ddl.name,
                 'columns': {},
@@ -83,10 +83,10 @@ class Rdbms(gitly.Branch):
                         'columns': [column.name],
                         'unique': True,
                     }
-        proto.generate(table)
+            proto.generate(table)
 
     def ddl_alter_table(self, ddl):
-        with self.table_schema(ddl.name, True) as table:
+        with self.edit_table_schema(ddl.name, True) as table:
             if type(ddl.alteration) == statements.AddConstraint:
                 constraint = ddl.alteration.constraint
                 if type(constraint) == statements.UniqueConstraint:
@@ -94,7 +94,7 @@ class Rdbms(gitly.Branch):
                         'columns': constraint.cols,
                         'unique': True,
                     }
-                    self.update_index(ddl.name, ddl.alteration.name)
+                    self.update_index(table, ddl.alteration.name)
                 elif type(constraint) == statements.ForeignKey:
                     table['foreign_keys'][ddl.alteration.name] = {
                         'column': constraint.name,
@@ -108,38 +108,57 @@ class Rdbms(gitly.Branch):
                 if type(ddl.alteration.alteration) == statements.SetDefault:
                     table['columns'][ddl.alteration.name]['default'] = \
                         json.loads(ddl.alteration.alteration.value)
+                else:
+                    import pdb; pdb.set_trace()
                 proto.generate(table)
             else:
                 import pdb; pdb.set_trace()
                 1
 
     def ddl_create_index(self, ddl):
-        with self.table_schema(ddl.table, True) as table:
-            table['indexes'][ddl.name] = {
+        with self.edit_table_schema(ddl.table, True) as schema:
+            schema['indexes'][ddl.name] = {
                 'columns': ddl.cols,
             }
-        self.update_index(ddl.table, ddl.name)
-
+            self.update_index(schema, ddl.name)
 
     def show_tables(self, _):
         return iter(zip(self.branch.get('tables', [])))
 
     def update_index(self, table, name):
+        """ Update index. Should finish before table schema.json is saved """
         pass
 
     def update_fk(self, table, name):
         pass
 
     @contextmanager
-    def table_schema(self, name, should_exist):
-        key = 'tables/%s/schema.json' % name
+    def edit_table_schema(self, table_name, should_exist):
+        key = 'tables/%s/schema.json' % table_name
         if should_exist != (key in self.branch):
             desc = ['already exists', 'does not exist'][int(should_exist)]
-            raise exc.ProgrammingError("Table %s %s" % (name, desc))
+            raise exc.ProgrammingError("Table %s %s" % (table_name, desc))
         table = json.loads(self.branch[key]) if should_exist else {}
         yield table
         self.branch[key] = pretty_dumps(table)
 
+    def get_schema(self, table_name):
+        key = 'tables/%s/schema.json' % table_name
+        return json.loads(self.branch[key])
 
+    def update_indexes(self, table_name, record):
+        """ Assume it's just INSERT for now """
+        schema = self.get_schema(table_name)
+        for idx_name, idx in schema['indexes'].items():
+            if idx_name.startswith('FIELD_PRIMARY'):
+                continue
+            key = map(record.get, idx['columns'])
+            key = ' '.join(urllib.quote_plus(k) for k in key)
+
+
+        import pdb; pdb.set_trace()
+
+
+import json as pyjson
 def pretty_dumps(data):
-    return json.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))
+    return pyjson.dumps(data, sort_keys=True, indent=4, separators=(',', ': '))
